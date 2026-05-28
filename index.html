@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Electron 浏览器</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- ============================================================
+         Electron 浏览器 — 主界面 HTML
+         ============================================================
+         
+         页面布局结构（从上到下）：
+         1. 标签栏 (tabs-container) — 标签列表 + 新建按钮 + 窗口控制
+         2. 工具栏 (toolbar) — 导航按钮 + 地址栏 + 书签/菜单
+         3. 主内容区 (main-content) — 浏览器视图 + 网络监控面板（可拖拽分割）
+         4. 状态栏 (status-bar) — 状态文本 + 请求数 + 缩放级别
+         
+         浮动面板：
+         - 菜单下拉 (menu-dropdown)
+         - 下载面板 (downloads-panel)
+         
+         所有动态内容由 renderer.js 操作 DOM 生成
+         ============================================================ -->
+
+    <div class="browser-container">
+
+        <!-- ====== 1. 标签栏 ====== -->
+        <div class="tabs-container">
+            <!-- 应用标题 -->
+            <span class="app-title">🌐 浏览器</span>
+            <!-- 标签区域：标签列表（动态生成）+ 新建按钮 -->
+            <div class="tabs-area">
+                <div class="tabs-wrapper" id="tabs-wrapper">
+                    <!-- 标签项由 renderer.js 的 createTab() 动态创建 -->
+                </div>
+                 <button class="new-tab-btn" id="new-tab-btn" title="新建标签页">+</button>
+            </div>
+            <!-- 自定义窗口控制按钮（因为 frame: false 没有原生标题栏） -->
+            <div class="window-controls">
+                <button class="control-btn minimize" onclick="electronAPI.minimizeWindow()">─</button>
+                <button class="control-btn maximize" onclick="electronAPI.maximizeWindow()">□</button>
+                <button class="control-btn close" onclick="electronAPI.closeWindow()">✕</button>
+            </div>
+        </div>
+
+        <!-- ====== 2. 工具栏 ====== -->
+        <div class="toolbar">
+            <!-- 导航按钮组：后退、前进、刷新、主页 -->
+            <div class="navigation-buttons">
+                <button id="back-btn" class="nav-btn" title="后退">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 12H5M12 19l-7-7 7-7"/>
+                    </svg>
+                </button>
+                <button id="forward-btn" class="nav-btn" title="前进">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                </button>
+                <button id="refresh-btn" class="nav-btn" title="刷新">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M23 4v6h-6M1 20v-6h6"/>
+                        <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+                    </svg>
+                </button>
+                <button id="home-btn" class="nav-btn" title="主页">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+                        <polyline points="9 22 9 12 15 12 15 22"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- 地址栏：安全图标 + URL 输入框 + 前往按钮 -->
+            <div class="url-bar-container">
+                <!-- HTTPS 锁头图标 / HTTP 解锁图标 -->
+                <div class="security-icon" id="security-icon">🔒</div>
+                <input type="text" id="url-input" class="url-input" placeholder="输入网址或搜索..." />
+                <button id="go-btn" class="go-btn">前往</button>
+            </div>
+
+            <!-- 工具栏操作按钮：书签、菜单 -->
+            <div class="toolbar-actions">
+                <button id="bookmark-btn" class="action-btn" title="添加书签">☆</button>
+                <button id="menu-btn" class="action-btn" title="菜单">☰</button>
+            </div>
+        </div>
+
+        <!-- ====== 3. 主内容区（上下分割布局） ====== -->
+        <div class="main-content" id="main-content">
+            <!-- 上方：浏览器 webview 容器 -->
+            <div class="browser-wrapper" id="browser-wrapper">
+                <!-- webview 元素由 renderer.js 的 createTab() 动态创建 -->
+            </div>
+
+            <!-- 分割线拖拽手柄（用于调整网络面板高度） -->
+            <div class="resize-handle" id="resize-handle"></div>
+
+            <!-- 下方：网络监控面板（默认隐藏，按 F12 或菜单打开） -->
+            <div class="network-panel" id="network-panel">
+                <!-- 面板标题栏 -->
+                <div class="network-panel-header">
+                    <span>网络监控</span>
+                    <div class="network-panel-controls">
+                        <button id="clear-network-btn" class="network-btn">清空</button>
+                        <button id="close-network-btn" class="network-btn close-btn">×</button>
+                    </div>
+                </div>
+
+                <!-- URL 筛选输入框 -->
+                <div class="network-filter">
+                    <input type="text" id="network-filter-input" placeholder="筛选 URL..." />
+                </div>
+
+                <!-- 请求类型过滤标签页（类似 Chrome DevTools） -->
+                <div class="network-type-tabs" id="network-type-tabs">
+                    <button class="type-tab active" data-type="all">全部</button>
+                    <button class="type-tab" data-type="fetch/xhr">Fetch/XHR</button>
+                    <button class="type-tab" data-type="document">Doc</button>
+                    <button class="type-tab" data-type="stylesheet">CSS</button>
+                    <button class="type-tab" data-type="script">JS</button>
+                    <button class="type-tab" data-type="image">Img</button>
+                    <button class="type-tab" data-type="font">Font</button>
+                    <button class="type-tab" data-type="media">Media</button>
+                    <button class="type-tab" data-type="websocket">WS</button>
+                    <button class="type-tab" data-type="other">Other</button>
+                </div>
+
+                <!-- 网络面板主体：左右分割（请求列表 + 请求详情） -->
+                <div class="network-body">
+                    <!-- 左侧：请求列表 -->
+                    <div class="network-list">
+                        <div class="network-table-header">
+                            <span class="col-method">方法</span>
+                            <span class="col-status">状态</span>
+                            <span class="col-type">类型</span>
+                            <span class="col-url">URL</span>
+                            <span class="col-time">时间</span>
+                        </div>
+                        <!-- 请求行由 renderer.js 的 updateNetworkPanel() 动态生成 -->
+                        <div class="network-table-body" id="network-table-body">
+                        </div>
+                    </div>
+
+                    <!-- 右侧：请求详情面板（点击某条请求后显示） -->
+                    <div class="network-detail" id="network-detail">
+                        <div class="network-detail-header">
+                            <span id="detail-title">请求详情</span>
+                            <div class="detail-header-actions">
+                                <!-- 仅对图片/媒体等可下载类型显示 -->
+                                <button id="download-resource-btn" class="download-btn" style="display: none;">下载资源</button>
+                                <button id="close-detail-btn" class="network-btn close-btn">×</button>
+                            </div>
+                        </div>
+                        <!-- 详情 Tab：Headers / Params / Response -->
+                        <div class="detail-tabs" id="detail-tabs">
+                            <button class="detail-tab active" data-tab="headers">Headers</button>
+                            <button class="detail-tab" data-tab="params">Params</button>
+                            <button class="detail-tab" data-tab="response">Response</button>
+                        </div>
+                        <!-- 详情内容（3 个面板，通过 Tab 切换显示） -->
+                        <div class="detail-content" id="detail-content">
+                            <div class="detail-pane active" data-pane="headers">
+                                <div id="detail-headers"></div>
+                            </div>
+                            <div class="detail-pane" data-pane="params">
+                                <div id="detail-params"></div>
+                            </div>
+                            <div class="detail-pane" data-pane="response">
+                                <div id="detail-response"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== 4. 状态栏 ====== -->
+        <div class="status-bar">
+            <div class="status-left">
+                <span id="status-text">就绪</span>
+            </div>
+            <div class="status-right">
+                <span id="network-count">0 请求</span>
+                <span id="zoom-level">100%</span>
+            </div>
+        </div>
+
+        <!-- ====== 浮动面板：菜单下拉 ====== -->
+        <div class="menu-dropdown" id="menu-dropdown">
+            <div class="menu-item" id="new-tab-menu-btn">新建标签页</div>
+            <div class="menu-item" id="new-window-btn">新建窗口</div>
+            <div class="menu-divider"></div>
+            <div class="menu-item" id="network-panel-btn">网络监控</div>
+            <div class="menu-item" id="history-btn">历史记录</div>
+            <div class="menu-item" id="downloads-btn">下载</div>
+            <div class="menu-divider"></div>
+            <div class="menu-item" id="settings-btn">设置</div>
+            <div class="menu-item" id="devtools-btn">开发者工具</div>
+        </div>
+
+        <!-- ====== 浮动面板：下载资源 ====== -->
+        <div class="downloads-panel" id="downloads-panel">
+            <div class="downloads-header">
+                <span class="downloads-title">下载资源</span>
+                <div class="downloads-actions">
+                    <button id="download-selected-btn" class="download-action-btn">下载选中</button>
+                    <button id="download-all-btn" class="download-action-btn">下载全部</button>
+                    <button id="close-downloads-btn" class="network-btn close-btn">×</button>
+                </div>
+            </div>
+            <!-- 下载筛选：URL 关键词 + 类型下拉 -->
+            <div class="downloads-filter">
+                <input type="text" id="downloads-filter-input" placeholder="筛选 URL..." />
+                <select id="downloads-type-filter">
+                    <option value="all">全部类型</option>
+                    <option value="image">图片</option>
+                    <option value="media">媒体</option>
+                </select>
+            </div>
+            <!-- 下载资源列表 -->
+            <div class="downloads-list" id="downloads-list">
+                <div class="downloads-table-header">
+                    <span class="col-check"><input type="checkbox" id="select-all-downloads"></span>
+                    <span class="col-type">类型</span>
+                    <span class="col-url">URL</span>
+                    <span class="col-action">操作</span>
+                </div>
+                <!-- 下载行由 renderer.js 的 updateDownloadsList() 动态生成 -->
+                <div class="downloads-table-body" id="downloads-table-body">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 渲染进程逻辑脚本 -->
+    <script src="renderer.js"></script>
+</body>
+</html>
